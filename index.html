@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>星际争霸II国服录像修复工具</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 20px;
+            background-color: #f7f9fc;
+            color: #333;
+            text-align: center;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 30px;
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #1e8449;
+            border-bottom: 2px solid #1e8449;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .custom-file-upload {
+            border: 3px dashed #1e8449;
+            display: flex; 
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 40px; 
+            min-height: 150px;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s;
+            color: #1e8449;
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .custom-file-upload:hover, .drag-over {
+            background-color: #e8f8f5;
+            border-color: #145b32;
+        }
+        #fileNameDisplay {
+            margin-top: 10px;
+            font-weight: normal;
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+        #processBtn {
+            background-color: #3498db;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 20px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            width: 80%; 
+        }
+        #processBtn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        #processBtn:hover:not(:disabled) {
+            background-color: #2980b9;
+        }
+        #status {
+            margin-top: 30px;
+            padding: 15px;
+            border-radius: 8px;
+            min-height: 20px;
+            font-weight: 500;
+        }
+        .note {
+            margin-top: 20px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>星际争霸II 国服录像修复</h1>
+    <p>适用于 SC2.5.0.15.95687 版本</p>
+
+    <label for="replayFile" class="custom-file-upload" id="dropArea">
+        点击选择或拖拽 .SC2Replay 文件到此
+        <span id="fileNameDisplay">（未选择文件）</span>
+    </label>
+    <input type="file" id="replayFile" accept=".SC2Replay" />
+    
+    <button id="processBtn" disabled>执行修复并下载</button>
+
+    <div id="status"></div>
+    <p class="note">⚠️ 本工具在您的浏览器本地执行操作，文件不会上传至任何服务器。</p>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('replayFile');
+    const processBtn = document.getElementById('processBtn');
+    const statusDiv = document.getElementById('status');
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
+    const dropArea = document.getElementById('dropArea');
+    let currentFile = null;
+
+    const searchBytes = new Uint8Array([0x09, 0x00, 0x04, 0x09, 0x00, 0x06, 0x09, 0x00]);
+    const targetBytes = new Uint8Array([0x09, 0x0A, 0x04, 0x09, 0x00, 0x06, 0x09, 0x1E]);
+    const LENGTH = searchBytes.length;
+
+    function findBytesOffset(buffer, searchBytes) {
+        const view = new Uint8Array(buffer);
+        const searchLen = searchBytes.length;
+        const bufferLen = view.length;
+        const scanLimit = Math.min(bufferLen, 128); 
+
+        for (let i = 0; i < scanLimit - searchLen + 1; i++) {
+            let match = true;
+            for (let j = 0; j < searchLen; j++) {
+                if (view[i + j] !== searchBytes[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function handleFileSelection(file) {
+        if (!file || !file.name.toLowerCase().endsWith('.sc2replay')) {
+            statusDiv.textContent = '❌ 文件类型错误，请选择 .SC2Replay 文件。';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+            processBtn.disabled = true;
+            return;
+        }
+
+        currentFile = file;
+        fileNameDisplay.textContent = `当前文件: ${currentFile.name}`;
+        processBtn.disabled = false;
+        statusDiv.textContent = '文件已加载，准备修复。';
+        statusDiv.style.backgroundColor = '#d4edda';
+        statusDiv.style.color = '#155724';
+    }
+
+    fileInput.addEventListener('change', (event) => {
+        if (event.target.files.length > 0) {
+            handleFileSelection(event.target.files[0]);
+        }
+    });
+
+    dropArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropArea.classList.add('drag-over');
+    });
+
+    dropArea.addEventListener('dragleave', () => {
+        dropArea.classList.remove('drag-over');
+    });
+
+    dropArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropArea.classList.remove('drag-over');
+        if (e.dataTransfer.items) {
+            if (e.dataTransfer.items.length > 0 && e.dataTransfer.items[0].kind === 'file') {
+                handleFileSelection(e.dataTransfer.items[0].getAsFile());
+            }
+        } else if (e.dataTransfer.files.length > 0) {
+            handleFileSelection(e.dataTransfer.files[0]);
+        }
+    });
+
+    processBtn.addEventListener('click', () => {
+        if (!currentFile) {
+            return;
+        }
+
+        statusDiv.textContent = '正在搜索并处理，请稍候...';
+        statusDiv.style.backgroundColor = '#fff3cd'; 
+        statusDiv.style.color = '#856404';
+
+        const reader = new FileReader();
+
+        reader.onload = function(e) {
+            const buffer = e.target.result;
+            
+            try {
+                const offset = findBytesOffset(buffer, searchBytes);
+
+                if (offset === -1) {
+                    statusDiv.textContent = '❌ 未找到指定的损坏字节序列，文件可能未损坏或版本不匹配。';
+                    statusDiv.style.backgroundColor = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                    return;
+                }
+                
+                const newBuffer = buffer.slice(0);
+                const newView = new Uint8Array(newBuffer);
+
+                for (let i = 0; i < LENGTH; i++) {
+                    newView[offset + i] = targetBytes[i];
+                }
+
+                const fixedBlob = new Blob([newBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(fixedBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                const newFileName = currentFile.name.replace(/\.SC2Replay$/, '-FIXED.SC2Replay');
+                a.download = newFileName;
+                
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                statusDiv.textContent = `✅ 修复成功！在偏移量 ${offset} (0x${offset.toString(16).toUpperCase()}) 处替换完成。已下载文件：${newFileName}。`;
+                statusDiv.style.backgroundColor = '#cce5ff';
+                statusDiv.style.color = '#004085';
+                
+            } catch (error) {
+                statusDiv.textContent = `❌ 修复失败：${error.message}。`;
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+            }
+        };
+
+        reader.onerror = function() {
+            statusDiv.textContent = '❌ 文件读取失败，请重试。';
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
+        };
+
+        reader.readAsArrayBuffer(currentFile);
+    });
+});
+</script>
+
+</body>
+</html>
