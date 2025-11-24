@@ -1,2 +1,6 @@
 # StarCraft2-CN-Replay-Repair
-星际争霸2国服录像修复工具 支持在线 以及自编译（:
+星际争霸2国服录像在线修复工具  
+
+推荐访问 https://probiusofficial.github.io/StarCraft2-CN-Replay-Repair/ 使用  
+
+也可以自己把html down下来(：
