@@ -31,11 +31,11 @@
         }
         .custom-file-upload {
             border: 3px dashed #1e8449;
-            display: flex; 
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 60px 40px; 
+            padding: 60px 40px;
             min-height: 150px;
             cursor: pointer;
             border-radius: 10px;
@@ -66,7 +66,7 @@
             font-size: 20px;
             font-weight: bold;
             transition: background-color 0.3s;
-            width: 80%; 
+            width: 80%;
         }
         #processBtn:disabled {
             background-color: #ccc;
@@ -81,6 +81,7 @@
             border-radius: 8px;
             min-height: 20px;
             font-weight: 500;
+            text-align: left; /* 批量处理状态需要左对齐 */
         }
         .note {
             margin-top: 20px;
@@ -93,15 +94,15 @@
 
 <div class="container">
     <h1>星际争霸II 国服录像修复</h1>
-    <p>适用于 SC2.5.0.15.95687 版本</p>
+    <p>适用于 SC2.5.0.15.95687 版本，支持同时选择/拖拽多个文件进行修复。</p>
 
     <label for="replayFile" class="custom-file-upload" id="dropArea">
         点击选择或拖拽 .SC2Replay 文件到此
         <span id="fileNameDisplay">（未选择文件）</span>
     </label>
-    <input type="file" id="replayFile" accept=".SC2Replay" />
+    <input type="file" id="replayFile" accept=".SC2Replay" multiple />
     
-    <button id="processBtn" disabled>执行修复并下载</button>
+    <button id="processBtn" disabled>执行修复并下载全部文件</button>
 
     <div id="status"></div>
     <p class="note">⚠️ 本工具在您的浏览器本地执行操作，文件不会上传至任何服务器。</p>
@@ -114,7 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusDiv = document.getElementById('status');
     const fileNameDisplay = document.getElementById('fileNameDisplay');
     const dropArea = document.getElementById('dropArea');
-    let currentFile = null;
+    let fileQueue = [];
+    let processing = false;
 
     const searchBytes = new Uint8Array([0x09, 0x00, 0x04, 0x09, 0x00, 0x06, 0x09, 0x00]);
     const targetBytes = new Uint8Array([0x09, 0x0A, 0x04, 0x09, 0x00, 0x06, 0x09, 0x1E]);
@@ -124,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const view = new Uint8Array(buffer);
         const searchLen = searchBytes.length;
         const bufferLen = view.length;
-        const scanLimit = Math.min(bufferLen, 128); 
+        const scanLimit = Math.min(bufferLen, 128);
 
         for (let i = 0; i < scanLimit - searchLen + 1; i++) {
             let match = true;
@@ -141,27 +143,192 @@ document.addEventListener('DOMContentLoaded', () => {
         return -1;
     }
 
-    function handleFileSelection(file) {
-        if (!file || !file.name.toLowerCase().endsWith('.sc2replay')) {
-            statusDiv.textContent = '❌ 文件类型错误，请选择 .SC2Replay 文件。';
-            statusDiv.style.backgroundColor = '#f8d7da';
-            statusDiv.style.color = '#721c24';
-            processBtn.disabled = true;
-            return;
-        }
+    function updateFileDisplay() {
+        if (fileQueue.length > 0) {
+            fileNameDisplay.innerHTML = `已选择文件数量: <b>${fileQueue.length}</b><br>点击 "执行修复" 开始批量处理。`;
+            processBtn.disabled = false;
 
-        currentFile = file;
-        fileNameDisplay.textContent = `当前文件: ${currentFile.name}`;
-        processBtn.disabled = false;
-        statusDiv.textContent = '文件已加载，准备修复。';
-        statusDiv.style.backgroundColor = '#d4edda';
-        statusDiv.style.color = '#155724';
+        } else {
+            fileNameDisplay.textContent = '（未选择文件）';
+            processBtn.disabled = true;
+
+        }
     }
 
-    fileInput.addEventListener('change', (event) => {
-        if (event.target.files.length > 0) {
-            handleFileSelection(event.target.files[0]);
+    function addFilesToQueue(files) {
+        let validFiles = Array.from(files).filter(file => file.name.toLowerCase().endsWith('.sc2replay'));
+        
+        if (validFiles.length > 0) {
+            fileQueue = validFiles; 
+            updateFileDisplay();
+
+
+            statusDiv.textContent = ''; 
+            statusDiv.style.backgroundColor = 'transparent';
+
+        } else if (files.length > 0) {
+            statusDiv.innerHTML = `❌ 未检测到有效的 .SC2Replay 文件。`;
+            statusDiv.style.backgroundColor = '#f8d7da';
+            statusDiv.style.color = '#721c24';
         }
+    }
+
+    function processSingleFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+
+
+            const lastModifiedDate = new Date(file.lastModified);
+            const year = lastModifiedDate.getFullYear();
+
+            const month = String(lastModifiedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(lastModifiedDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}${month}${day}`;
+
+
+            reader.onload = function(e) {
+                const buffer = e.target.result;
+                
+                try {
+                    const offset = findBytesOffset(buffer, searchBytes);
+                    let result;
+
+                    if (offset === -1) {
+                        result = { success: false, name: file.name, message: '未找到损坏标记。' };
+                    } else {
+                        const newBuffer = buffer.slice(0); 
+                        const newView = new Uint8Array(newBuffer);
+
+                        for (let i = 0; i < LENGTH; i++) {
+                            newView[offset + i] = targetBytes[i];
+                        }
+
+                        const fixedBlob = new Blob([newBuffer], { type: 'application/octet-stream' });
+                        const url = URL.createObjectURL(fixedBlob);
+                        const a = document.createElement('a');
+                        a.href = url;
+
+
+                        // update：MyReplay.SC2Replay -> MyReplay-20251201-FIXED.SC2Replay add:timestamp
+                        const originalFileName = file.name.replace(/\.SC2Replay$/i, ''); 
+                        const newFileName = `${originalFileName}-${dateStr}-FIXED.SC2Replay`;
+                        
+                        a.download = newFileName;
+                        
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        
+                        result = { success: true, name: newFileName, message: `修复成功 (Offset: 0x${offset.toString(16).toUpperCase()})` };
+                    }
+                    resolve(result);
+                } catch (error) {
+                    reject({ success: false, name: file.name, message: `处理失败: ${error.message}` });
+                }
+            };
+
+            reader.onerror = function() {
+                reject({ success: false, name: file.name, message: '文件读取失败。' });
+            };
+
+            reader.readAsArrayBuffer(file);
+        });
+    }
+    
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function processFileQueue() {
+        if (processing || fileQueue.length === 0) return;
+
+        processing = true;
+        processBtn.disabled = true;
+        
+
+        statusDiv.style.backgroundColor = '#fff3cd';
+        statusDiv.style.color = '#856404';
+        
+
+        const currentQueue = [...fileQueue];
+        fileQueue = [];
+        
+        const totalFiles = currentQueue.length;
+        statusDiv.innerHTML = `
+            <h4>正在进行批量修复...</h4>
+            <div id="processingCurrent" style="margin-bottom: 10px; font-style: italic;"></div>
+            <ul id="resultList" style="list-style-type: none; padding: 0; margin-top: 10px;">
+                </ul>
+        `;
+        
+        const processingCurrent = document.getElementById('processingCurrent');
+        const resultList = document.getElementById('resultList');
+
+        let successCount = 0;
+        let failCount = 0;
+        const DELAY_MS = 500; 
+
+        for (let i = 0; i < totalFiles; i++) {
+            const file = currentQueue[i];
+            
+
+            processingCurrent.textContent = `[${i + 1}/${totalFiles}] 正在处理：${file.name} ...`;
+            
+            let result;
+            try {
+                result = await processSingleFile(file);
+            } catch (error) {
+                result = error;
+            }
+            
+
+            const statusIcon = result.success ? '🟢' : '🔴';
+            const statusStyle = result.success ? 'color: #155724;' : 'color: #721c24;';
+            
+            const li = document.createElement('li');
+            li.style.cssText = statusStyle + 'margin-bottom: 5px;';
+            li.innerHTML = `${statusIcon} <b>${result.name}</b> - ${result.message}`;
+            resultList.appendChild(li);
+
+
+            if (result.success) {
+                successCount++;
+            } else {
+                failCount++;
+            }
+            
+            await sleep(DELAY_MS); 
+        }
+        
+
+        processingCurrent.remove(); 
+        processing = false;
+        
+
+        statusDiv.style.backgroundColor = '#e0ffe0';
+        statusDiv.style.color = '#155724';
+        const finalStatusHtml = `
+            <h4>✅ 批量修复完成！</h4>
+            <p style="margin: 5px 0; font-size: 1.1em;">
+                <span style="color: #155724;">成功: <b>${successCount}</b> 个</span> | 
+                <span style="color: #721c24;">失败: <b>${failCount}</b> 个</span>
+            </p>
+            <ul style="list-style-type: none; padding: 0; margin-top: 10px;">
+                ${resultList.innerHTML} 
+            </ul>
+        `;
+
+        statusDiv.innerHTML = finalStatusHtml;
+
+
+        updateFileDisplay();
+    }
+
+
+    fileInput.addEventListener('change', (event) => {
+
+        fileQueue = [];
+        addFilesToQueue(event.target.files);
     });
 
     dropArea.addEventListener('dragover', (e) => {
@@ -176,77 +343,14 @@ document.addEventListener('DOMContentLoaded', () => {
     dropArea.addEventListener('drop', (e) => {
         e.preventDefault();
         dropArea.classList.remove('drag-over');
-        if (e.dataTransfer.items) {
-            if (e.dataTransfer.items.length > 0 && e.dataTransfer.items[0].kind === 'file') {
-                handleFileSelection(e.dataTransfer.items[0].getAsFile());
-            }
-        } else if (e.dataTransfer.files.length > 0) {
-            handleFileSelection(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files.length > 0) {
+
+            fileQueue = [];
+            addFilesToQueue(e.dataTransfer.files);
         }
     });
 
-    processBtn.addEventListener('click', () => {
-        if (!currentFile) {
-            return;
-        }
-
-        statusDiv.textContent = '正在搜索并处理，请稍候...';
-        statusDiv.style.backgroundColor = '#fff3cd'; 
-        statusDiv.style.color = '#856404';
-
-        const reader = new FileReader();
-
-        reader.onload = function(e) {
-            const buffer = e.target.result;
-            
-            try {
-                const offset = findBytesOffset(buffer, searchBytes);
-
-                if (offset === -1) {
-                    statusDiv.textContent = '❌ 未找到指定的损坏字节序列，文件可能未损坏或版本不匹配。';
-                    statusDiv.style.backgroundColor = '#f8d7da';
-                    statusDiv.style.color = '#721c24';
-                    return;
-                }
-                
-                const newBuffer = buffer.slice(0);
-                const newView = new Uint8Array(newBuffer);
-
-                for (let i = 0; i < LENGTH; i++) {
-                    newView[offset + i] = targetBytes[i];
-                }
-
-                const fixedBlob = new Blob([newBuffer], { type: 'application/octet-stream' });
-                const url = URL.createObjectURL(fixedBlob);
-                const a = document.createElement('a');
-                a.href = url;
-                const newFileName = currentFile.name.replace(/\.SC2Replay$/, '-FIXED.SC2Replay');
-                a.download = newFileName;
-                
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                
-                statusDiv.textContent = `✅ 修复成功！在偏移量 ${offset} (0x${offset.toString(16).toUpperCase()}) 处替换完成。已下载文件：${newFileName}。`;
-                statusDiv.style.backgroundColor = '#cce5ff';
-                statusDiv.style.color = '#004085';
-                
-            } catch (error) {
-                statusDiv.textContent = `❌ 修复失败：${error.message}。`;
-                statusDiv.style.backgroundColor = '#f8d7da';
-                statusDiv.style.color = '#721c24';
-            }
-        };
-
-        reader.onerror = function() {
-            statusDiv.textContent = '❌ 文件读取失败，请重试。';
-            statusDiv.style.backgroundColor = '#f8d7da';
-            statusDiv.style.color = '#721c24';
-        };
-
-        reader.readAsArrayBuffer(currentFile);
-    });
+    processBtn.addEventListener('click', processFileQueue);
 });
 </script>
 
