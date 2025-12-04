@@ -94,8 +94,8 @@
 
 <div class="container">
     <h1>星际争霸II 国服录像修复</h1>
-    <p>适用于 SC2.5.0.15.95687 版本，支持同时选择/拖拽多个文件进行修复。</p>
-
+    <p>适用于 SC2.5.0.15.X 系列版本(95687/95740..等)，支持同时选择/拖拽多个文件进行修复。</p>
+    <p>原理：
     <label for="replayFile" class="custom-file-upload" id="dropArea">
         点击选择或拖拽 .SC2Replay 文件到此
         <span id="fileNameDisplay">（未选择文件）</span>
@@ -118,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let fileQueue = [];
     let processing = false;
 
-    const searchBytes = new Uint8Array([0x09, 0x00, 0x04, 0x09, 0x00, 0x06, 0x09, 0x00]);
+    const searchBytes = new Uint8Array([0x09, 0x00, 0x04, 0x09, 0x00, 0x06, 0x09, 0x00]); 
     const targetBytes = new Uint8Array([0x09, 0x0A, 0x04, 0x09, 0x00, 0x06, 0x09, 0x1E]);
     const LENGTH = searchBytes.length;
 
