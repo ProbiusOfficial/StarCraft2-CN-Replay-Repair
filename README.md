@@ -8,4 +8,10 @@
 
 推荐访问 https://probiusofficial.github.io/StarCraft2-CN-Replay-Repair/ 使用  
 
-也可以自己把html down下来(：
+也可以自己把html down下来本地部署
+
+## 原理和声明
+
+该工具通过修改录像文件版本号部分的ViNT压缩数据区块从而达到修复目的，更多关于录像文件结构相关的部分请参考三方工具 [sc2reader](https://github.com/ggtracker/sc2reader) 或者暴雪官方开源的 [s2protocol](https://github.com/Blizzard/s2protocol) 。
+
+由于工具只会修改特定数据区块，您需要清楚该工具无法让您观看不受支持的大版本录像，也无法用于修复由于星际争霸2客户端相关未知bug或者地图依赖配置不当导致的录像文件先天性结构缺失，异常，数据不同步等相关问题。
